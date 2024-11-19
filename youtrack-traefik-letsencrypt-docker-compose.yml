@@ -1,117 +1,38 @@
-# youtrack with Let's Encrypt Using Docker Compose
-
-# Change variables in the `.env` to meet your requirements.
-# Note that the `.env` file should be in the same directory as `youtrack-traefik-letsencrypt-docker-compose.yml`.
-
-# Create networks for your services before deploying the configuration using the commands:
-# `docker network create traefik-network`
-# `docker network create youtrack-network`
-
-# Deploy youtrack using Docker Compose:
-# `docker compose -f youtrack-traefik-letsencrypt-docker-compose.yml -p youtrack up -d`
-
-
-networks:
-  youtrack-network:
-    external: true
-  traefik-network:
-    external: true
-
-volumes:
-  traefik-certificates:
+version: "3.3"
 
 services:
+
+  traefik:
+    image: ${TRAEFIK_IMAGE_TAG}
+    container_name: "traefik"
+    command:
+      - "--log.level=INFO"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=${TRAEFIK_ACME_EMAIL}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "443:443"
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/srv/letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
   youtrack:
     image: ${YOUTRACK_IMAGE_TAG}
+    container_name: "youtrack"
     volumes:
       - /srv/youtrack/data:/opt/youtrack/data
       - /srv/youtrack/conf:/opt/youtrack/conf
       - /srv/youtrack/logs:/opt/youtrack/logs
       - /srv/youtrack/backups:/opt/youtrack/backups
-    networks:
-      - youtrack-network
-      - traefik-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 90s
     labels:
       - "traefik.enable=true"
+      - "traefik.http.services.youtrack.loadbalancer.server.port=8080"
       - "traefik.http.routers.youtrack.rule=Host(`${YOUTRACK_HOSTNAME}`)"
-      - "traefik.http.routers.youtrack.service=youtrack"
       - "traefik.http.routers.youtrack.entrypoints=websecure"
-      - "traefik.http.services.youtrack.loadbalancer.server.port=8090"
-      - "traefik.http.routers.youtrack.tls=true"
-      - "traefik.http.routers.youtrack.tls.certresolver=letsencrypt"
-      - "traefik.http.services.youtrack.loadbalancer.passhostheader=true"
-      - "traefik.tcp.routers.youtrack-synchrony.rule=HostSNI(`*`)"
-      - "traefik.tcp.routers.youtrack-synchrony.service=youtrack-synchrony"
-      - "traefik.tcp.routers.youtrack-synchrony.entrypoints=synchrony"
-      - "traefik.tcp.services.youtrack-synchrony.loadbalancer.server.port=8091"
-      - "traefik.http.routers.youtrack.middlewares=compresstraefik"
-      - "traefik.http.middlewares.compresstraefik.compress=true"
-      - "traefik.docker.network=traefik-network"
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      traefik:
-        condition: service_healthy
-
-  traefik:
-    image: ${TRAEFIK_IMAGE_TAG}
-    command:
-      - "--log.level=${TRAEFIK_LOG_LEVEL}"
-      - "--accesslog=true"
-      - "--api.dashboard=true"
-      - "--api.insecure=true"
-      - "--ping=true"
-      - "--ping.entrypoint=ping"
-      - "--entryPoints.ping.address=:8082"
-      - "--entryPoints.web.address=:80"
-      - "--entryPoints.websecure.address=:443"
-      - "--entryPoints.synchrony.address=:8091"
-      - "--providers.docker=true"
-      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
-      - "--providers.docker.exposedByDefault=false"
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_ACME_EMAIL}"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json"
-      - "--metrics.prometheus=true"
-      - "--metrics.prometheus.buckets=0.1,0.3,1.2,5.0"
-      - "--global.checkNewVersion=true"
-      - "--global.sendAnonymousUsage=false"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - traefik-certificates:/etc/traefik/acme
-    networks:
-      - traefik-network
-    ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080"
-    healthcheck:
-      test: ["CMD", "wget", "http://localhost:8082/ping","--spider"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`${TRAEFIK_HOSTNAME}`)"
-      - "traefik.http.routers.dashboard.service=api@internal"
-      - "traefik.http.routers.dashboard.entrypoints=websecure"
-      - "traefik.http.services.dashboard.loadbalancer.server.port=8080"
-      - "traefik.http.routers.dashboard.tls=true"
-      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
-      - "traefik.http.services.dashboard.loadbalancer.passhostheader=true"
-      - "traefik.http.routers.dashboard.middlewares=authtraefik"
-      - "traefik.http.middlewares.authtraefik.basicauth.users=${TRAEFIK_BASIC_AUTH}"
-      - "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"
-      - "traefik.http.routers.http-catchall.entrypoints=web"
-      - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
-    restart: unless-stopped
-
+      - "traefik.http.routers.youtrack.tls.certresolver=myresolver"

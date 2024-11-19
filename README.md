@@ -10,13 +10,13 @@ Create networks for your services before deploying the configuration using the c
 
 `docker network create youtrack-network`
 
-To make the `install.sh` script executable, run the following command:
+To make the `install_yt.sh` script executable, run the following command:
 
-`chmod +x install.sh`
+`chmod +x install_yt.sh`
 
-Run  `install.sh` script, for create folders:
+Run  `install_yt.sh` script, for cr:
 
-`bash install.sh`
+`sh install_yt.sh`
 
 
 Deploy youtrack using Docker Compose:
